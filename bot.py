@@ -21,7 +21,7 @@ LINKS = {
     "link2": "https://telegram.me/portals/market?startapp=p0yi8t"
 }
 
-COURSE_FILE = "ostin_plug_nft_guide.pdf"
+COURSE_FILE = os.path.join(os.path.dirname(__file__), "ostin_plug_nft_guide.pdf")
 DB_PATH = "/tmp/users.db"
 
 # ============ НАСТРОЙКА ЛОГГИРОВАНИЯ ============
