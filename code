@@ -9,7 +9,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMar
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 import uvicorn
 
@@ -22,7 +22,7 @@ LINKS = {
 }
 
 COURSE_FILE = "ostin_plug_nft_guide.pdf"
-DB_PATH = "/tmp/users.db"  # Render использует /tmp для временных файлов
+DB_PATH = "/tmp/users.db"
 
 # ============ НАСТРОЙКА ЛОГГИРОВАНИЯ ============
 logging.basicConfig(
@@ -42,7 +42,6 @@ app = FastAPI()
 
 # ============ РАБОТА С БАЗОЙ ДАННЫХ ============
 def init_db():
-    """Создание таблицы пользователей"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -59,7 +58,6 @@ def init_db():
     logger.info("База данных инициализирована")
 
 def get_user(user_id: int) -> Optional[Dict[str, Any]]:
-    """Получение данных пользователя"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -81,7 +79,6 @@ def get_user(user_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 def create_user(user_id: int):
-    """Создание нового пользователя"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -95,7 +92,6 @@ def create_user(user_id: int):
         logger.error(f"Ошибка создания пользователя {user_id}: {e}")
 
 def mark_link_clicked(user_id: int, link_num: int):
-    """Отметка о переходе по ссылке"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -110,7 +106,6 @@ def mark_link_clicked(user_id: int, link_num: int):
         logger.error(f"Ошибка отметки ссылки для {user_id}: {e}")
 
 def mark_course_sent(user_id: int):
-    """Отметка о выдаче курса"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -124,7 +119,6 @@ def mark_course_sent(user_id: int):
         logger.error(f"Ошибка отметки курса для {user_id}: {e}")
 
 def reset_user(user_id: int):
-    """Сброс прогресса пользователя"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -139,7 +133,6 @@ def reset_user(user_id: int):
 
 # ============ КЛАВИАТУРЫ ============
 def get_start_keyboard():
-    """Клавиатура для стартового сообщения"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -162,7 +155,6 @@ def get_start_keyboard():
     ])
 
 def get_course_keyboard():
-    """Клавиатура для выдачи курса"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -179,7 +171,6 @@ def get_course_keyboard():
     ])
 
 def get_retry_keyboard():
-    """Клавиатура для повторной проверки"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -192,7 +183,6 @@ def get_retry_keyboard():
 # ============ ОБРАБОТЧИКИ КОМАНД ============
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    """Обработчик команды /start"""
     user_id = message.from_user.id
     username = message.from_user.username or "без username"
     
@@ -230,7 +220,6 @@ async def cmd_start(message: Message):
 
 @router.callback_query(F.data == "check_links")
 async def check_links(callback: CallbackQuery):
-    """Проверка перехода по ссылкам"""
     user_id = callback.from_user.id
     username = callback.from_user.username or "без username"
     
@@ -280,7 +269,6 @@ async def check_links(callback: CallbackQuery):
 
 @router.callback_query(F.data == "get_part1")
 async def send_part1(callback: CallbackQuery):
-    """Отправка первой части курса"""
     user_id = callback.from_user.id
     username = callback.from_user.username or "без username"
     
@@ -338,7 +326,6 @@ async def send_part1(callback: CallbackQuery):
 
 @router.callback_query(F.data == "part2_soon")
 async def part2_soon(callback: CallbackQuery):
-    """Ответ на запрос 2 части"""
     await callback.answer(
         "🔜 2 часть в разработке! Выходит в ближайшее время.",
         show_alert=True
@@ -357,12 +344,10 @@ async def part2_soon(callback: CallbackQuery):
 # ============ НАСТРОЙКА WEBHOOK ============
 @app.on_event("startup")
 async def on_startup():
-    """Настройка при запуске"""
     try:
         init_db()
         logger.info("База данных инициализирована")
         
-        # Устанавливаем webhook
         webhook_url = os.getenv("RENDER_EXTERNAL_URL", "https://your-app.onrender.com")
         webhook_path = f"/webhook/{BOT_TOKEN}"
         webhook_url_full = f"{webhook_url}{webhook_path}"
@@ -370,10 +355,8 @@ async def on_startup():
         await bot.set_webhook(url=webhook_url_full, drop_pending_updates=True)
         logger.info(f"Webhook установлен: {webhook_url_full}")
         
-        # Подключаем роутер
         dp.include_router(router)
         
-        # Настраиваем обработку webhook
         webhook_requests_handler = SimpleRequestHandler(
             dispatcher=dp,
             bot=bot,
