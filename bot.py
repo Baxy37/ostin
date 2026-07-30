@@ -366,12 +366,6 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Ошибка при старте: {e}")
 
-# ============ ПРАВИЛЬНЫЙ ОБРАБОТЧИК ЗАВЕРШЕНИЯ ============
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("Бот завершает работу...")
-    await bot.session.close()
-
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
