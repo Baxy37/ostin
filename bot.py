@@ -348,7 +348,7 @@ async def on_startup():
         init_db()
         logger.info("База данных инициализирована")
         
-        webhook_url = os.getenv("RENDER_EXTERNAL_URL", "https://your-app.onrender.com")
+        webhook_url = os.getenv("RENDER_EXTERNAL_URL", "https://ostin.onrender.com")
         webhook_path = f"/webhook/{BOT_TOKEN}"
         webhook_url_full = f"{webhook_url}{webhook_path}"
         
@@ -366,6 +366,13 @@ async def on_startup():
         
     except Exception as e:
         logger.error(f"Ошибка при старте: {e}")
+
+# ============ ПРАВИЛЬНЫЙ ОБРАБОТЧИК ЗАВЕРШЕНИЯ ============
+async def on_shutdown():
+    logger.info("Бот завершает работу...")
+    await bot.session.close()
+
+app.add_event_handler("shutdown", on_shutdown)
 
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
