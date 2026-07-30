@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import sqlite3
@@ -368,11 +367,10 @@ async def on_startup():
         logger.error(f"Ошибка при старте: {e}")
 
 # ============ ПРАВИЛЬНЫЙ ОБРАБОТЧИК ЗАВЕРШЕНИЯ ============
+@app.on_event("shutdown")
 async def on_shutdown():
     logger.info("Бот завершает работу...")
     await bot.session.close()
-
-app.add_event_handler("shutdown", on_shutdown)
 
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
