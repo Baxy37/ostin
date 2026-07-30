@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import sqlite3
-from datetime import datetime
 from typing import Optional, Dict, Any
 
 from aiogram import Bot, Dispatcher, Router, F
@@ -10,11 +9,11 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMar
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+import uvicorn
 
 # ============ ЗАГРУЗКА КОНФИГУРАЦИИ ============
-load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8911456302:AAFXu58SGEeCKZED7CiV5TCPvNADQ4pJX6M")
 
 LINKS = {
@@ -23,7 +22,7 @@ LINKS = {
 }
 
 COURSE_FILE = "ostin_plug_nft_guide.pdf"
-DB_PATH = "users.db"
+DB_PATH = "/tmp/users.db"  # Render использует /tmp для временных файлов
 
 # ============ НАСТРОЙКА ЛОГГИРОВАНИЯ ============
 logging.basicConfig(
@@ -32,13 +31,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ============ ИНИЦИАЛИЗАЦИЯ БОТА ============
+# ============ ИНИЦИАЛИЗАЦИЯ ============
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher()
 router = Router()
+app = FastAPI()
 
 # ============ РАБОТА С БАЗОЙ ДАННЫХ ============
 def init_db():
@@ -60,67 +60,82 @@ def init_db():
 
 def get_user(user_id: int) -> Optional[Dict[str, Any]]:
     """Получение данных пользователя"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT link1_clicked, link2_clicked, course_sent FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return {
-            "link1": bool(row[0]),
-            "link2": bool(row[1]),
-            "course_sent": bool(row[2])
-        }
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT link1_clicked, link2_clicked, course_sent FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "link1": bool(row[0]),
+                "link2": bool(row[1]),
+                "course_sent": bool(row[2])
+            }
+    except Exception as e:
+        logger.error(f"Ошибка получения пользователя {user_id}: {e}")
     return None
 
 def create_user(user_id: int):
     """Создание нового пользователя"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
-        (user_id,)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+            (user_id,)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка создания пользователя {user_id}: {e}")
 
 def mark_link_clicked(user_id: int, link_num: int):
     """Отметка о переходе по ссылке"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    column = "link1_clicked" if link_num == 1 else "link2_clicked"
-    cursor.execute(
-        f"UPDATE users SET {column} = 1 WHERE user_id = ?",
-        (user_id,)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        column = "link1_clicked" if link_num == 1 else "link2_clicked"
+        cursor.execute(
+            f"UPDATE users SET {column} = 1 WHERE user_id = ?",
+            (user_id,)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка отметки ссылки для {user_id}: {e}")
 
 def mark_course_sent(user_id: int):
     """Отметка о выдаче курса"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET course_sent = 1 WHERE user_id = ?",
-        (user_id,)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET course_sent = 1 WHERE user_id = ?",
+            (user_id,)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка отметки курса для {user_id}: {e}")
 
 def reset_user(user_id: int):
-    """Сброс прогресса пользователя (для тестов)"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET link1_clicked = 0, link2_clicked = 0, course_sent = 0 WHERE user_id = ?",
-        (user_id,)
-    )
-    conn.commit()
-    conn.close()
+    """Сброс прогресса пользователя"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET link1_clicked = 0, link2_clicked = 0, course_sent = 0 WHERE user_id = ?",
+            (user_id,)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка сброса для {user_id}: {e}")
 
 # ============ КЛАВИАТУРЫ ============
 def get_start_keyboard():
@@ -128,26 +143,20 @@ def get_start_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="🌐 Перейти на платформу 1 (обязательно)",
+                text="🌐 Платформа 1 (обязательно)",
                 url=LINKS["link1"]
             )
         ],
         [
             InlineKeyboardButton(
-                text="🌐 Перейти на платформу 2 (обязательно)",
+                text="🌐 Платформа 2 (обязательно)",
                 url=LINKS["link2"]
             )
         ],
         [
             InlineKeyboardButton(
-                text="✅ Я перешёл по обеим ссылкам! Проверить",
+                text="✅ Я перешёл по обеим ссылкам!",
                 callback_data="check_links"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🔄 Сбросить прогресс (для тестов)",
-                callback_data="reset_progress"
             )
         ]
     ])
@@ -174,7 +183,7 @@ def get_retry_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="✅ Я перешёл! Проверить снова",
+                text="✅ Проверить снова",
                 callback_data="check_links"
             )
         ]
@@ -189,11 +198,9 @@ async def cmd_start(message: Message):
     
     logger.info(f"Пользователь @{username} (ID: {user_id}) запустил бота")
     
-    # Создаём пользователя если его нет
     create_user(user_id)
     user_data = get_user(user_id)
     
-    # Если курс уже выдан
     if user_data and user_data["course_sent"]:
         await message.answer(
             "📚 <b>Вы уже получили доступ к курсу!</b>\n\n"
@@ -202,22 +209,21 @@ async def cmd_start(message: Message):
         )
         return
     
-    # Приветственное сообщение
     welcome_text = (
         "🔥 <b>Приветствую тебя на моём бесплатном курсе по заработку на NFT-подарках!</b>\n\n"
         "Этот курс создан для тех, кто хочет научиться зарабатывать реальные деньги "
-        "на арбитраже NFT в Telegram. Я вложил в него свой многолетний опыт и знания, "
+        "на арбитраже NFT в Telegram. Я вложил в него свой многолетний опыт, "
         "чтобы ты мог начать с нуля и уже через неделю видеть первые результаты.\n\n"
         "📊 <i>Что ты получишь в этом курсе:</i>\n"
         "• Пошаговые стратегии заработка\n"
         "• Актуальные данные по рынку на 2026 год\n"
         "• Сравнение всех площадок и комиссий\n"
         "• Реальные примеры с расчётами прибыли\n\n"
-        "❗️ <b>Но есть одно важное условие:</b>\n"
-        "Чтобы получить доступ к курсу, тебе нужно перейти по <b>ДВУМ</b> ссылкам ниже. "
+        "❗️ <b>Важное условие:</b>\n"
+        "Чтобы получить доступ к курсу, нужно перейти по <b>ДВУМ</b> ссылкам ниже. "
         "Это моя партнёрская программа — так мы с тобой сможем работать дальше, "
-        "и я буду давать тебе ещё больше эксклюзивных материалов и стратегий.\n\n"
-        "👇 <b>Переходи по ссылкам и возвращайся сюда для проверки!</b>"
+        "и я буду давать тебе ещё больше эксклюзивных материалов.\n\n"
+        "👇 <b>Переходи по ссылкам и возвращайся сюда!</b>"
     )
     
     await message.answer(welcome_text, reply_markup=get_start_keyboard())
@@ -233,15 +239,13 @@ async def check_links(callback: CallbackQuery):
     user_data = get_user(user_id)
     
     if not user_data:
-        await callback.answer("Ошибка! Пожалуйста, перезапустите бота командой /start", show_alert=True)
+        await callback.answer("Ошибка! Перезапустите бота командой /start", show_alert=True)
         return
     
-    # Проверяем обе ссылки
     link1 = user_data["link1"]
     link2 = user_data["link2"]
     
     if not link1 or not link2:
-        # Формируем сообщение о том, какие ссылки не открыты
         missing = []
         if not link1:
             missing.append("🔗 Ссылка 1")
@@ -253,26 +257,23 @@ async def check_links(callback: CallbackQuery):
         await callback.answer(
             "❌ Ты не перешёл по всем ссылкам!\n\n"
             f"Не открыты:\n{missing_text}\n\n"
-            "Перейди сначала по ссылкам, потом нажми кнопку проверки.",
+            "Перейди сначала по ссылкам, потом нажми проверку.",
             show_alert=True
         )
         
-        # Отправляем напоминание
         await callback.message.answer(
             "⚠️ <b>Внимание!</b>\n\n"
             f"Ты ещё не перешёл по этим ссылкам:\n{missing_text}\n\n"
-            "Пожалуйста, перейди по ним и нажми кнопку ниже для проверки.",
+            "Перейди по ним и нажми кнопку ниже.",
             reply_markup=get_retry_keyboard()
         )
         return
     
-    # Всё хорошо - даём доступ к курсу
     await callback.message.delete()
     await callback.message.answer(
         "✅ <b>Отлично! Ты выполнил все условия!</b>\n\n"
         "Теперь тебе доступен полный гайд по заработку на NFT-подарках.\n"
-        "Нажми кнопку ниже, чтобы скачать 1 часть курса 👇\n\n"
-        "📌 <i>Важно: Сохрани файл, так как он может быть полезен на всех этапах твоего пути!</i>",
+        "Нажми кнопку ниже, чтобы скачать 1 часть курса 👇",
         reply_markup=get_course_keyboard()
     )
     await callback.answer("🎉 Доступ открыт!")
@@ -287,24 +288,21 @@ async def send_part1(callback: CallbackQuery):
     
     user_data = get_user(user_id)
     
-    # Проверяем, что пользователь перешёл по ссылкам
     if not user_data or not user_data["link1"] or not user_data["link2"]:
         await callback.answer(
-            "❌ Сначала перейди по ссылкам! Используй команду /start",
+            "❌ Сначала перейди по ссылкам! Используй /start",
             show_alert=True
         )
         return
     
-    # Проверяем существование файла
     if not os.path.exists(COURSE_FILE):
         logger.error(f"Файл {COURSE_FILE} не найден!")
         await callback.answer(
-            "⚠️ Ошибка: файл курса временно недоступен. Пожалуйста, попробуйте позже.",
+            "⚠️ Файл курса временно недоступен. Попробуйте позже.",
             show_alert=True
         )
         return
     
-    # Отмечаем, что курс выдан
     mark_course_sent(user_id)
     
     try:
@@ -326,7 +324,6 @@ async def send_part1(callback: CallbackQuery):
         )
         await callback.answer("📄 Курс отправлен! Удачи в изучении!")
         
-        # Отправляем дополнительное мотивирующее сообщение
         await callback.message.answer(
             "💎 <b>Ты сделал первый шаг к финансовой независимости!</b>\n\n"
             "Запомни: 90% успеха — это дисциплина и постоянный анализ рынка.\n"
@@ -336,16 +333,14 @@ async def send_part1(callback: CallbackQuery):
         )
         
     except Exception as e:
-        logger.error(f"Ошибка при отправке файла пользователю {user_id}: {e}")
-        await callback.answer("⚠️ Ошибка при отправке файла. Попробуйте позже.", show_alert=True)
+        logger.error(f"Ошибка отправки файла {user_id}: {e}")
+        await callback.answer("⚠️ Ошибка отправки. Попробуйте позже.", show_alert=True)
 
 @router.callback_query(F.data == "part2_soon")
 async def part2_soon(callback: CallbackQuery):
     """Ответ на запрос 2 части"""
     await callback.answer(
-        "🔜 2 часть курса в активной разработке!\n"
-        "Она выйдет в ближайшее время. Я уведомлю тебя отдельно.\n"
-        "Следи за новостями!",
+        "🔜 2 часть в разработке! Выходит в ближайшее время.",
         show_alert=True
     )
     
@@ -359,80 +354,37 @@ async def part2_soon(callback: CallbackQuery):
         "Не переключайся! 🔥"
     )
 
-@router.callback_query(F.data == "reset_progress")
-async def reset_progress(callback: CallbackQuery):
-    """Сброс прогресса (для тестирования)"""
-    user_id = callback.from_user.id
-    
-    reset_user(user_id)
-    
-    await callback.answer("🔄 Прогресс сброшен! Используй /start для перезапуска.", show_alert=True)
-    await callback.message.delete()
-    await callback.message.answer(
-        "🔄 <b>Прогресс успешно сброшен!</b>\n\n"
-        "Ты можешь заново пройти весь путь.\n"
-        "Отправь команду /start, чтобы начать заново."
-    )
-
-@router.message()
-async def handle_unknown(message: Message):
-    """Обработка неизвестных команд"""
-    await message.answer(
-        "🤖 Я не понимаю эту команду.\n\n"
-        "Используй /start, чтобы начать или продолжить обучение.\n\n"
-        "Если возникли вопросы, просто нажми на кнопки в меню."
-    )
-
-# ============ ОБРАБОТЧИК НАЖАТИЯ ССЫЛОК (DEEP LINK) ============
-@router.message(Command("start", magic=F.args.startswith("link")))
-async def handle_deep_link(message: Message):
-    """Обработка переходов по реферальным ссылкам"""
-    user_id = message.from_user.id
-    args = message.text.split()
-    
-    if len(args) > 1:
-        payload = args[1]
-        if payload == "link1":
-            mark_link_clicked(user_id, 1)
-            await message.answer(
-                "✅ Ссылка 1 успешно открыта!\n"
-                "Теперь перейди по ссылке 2 и вернись ко мне."
-            )
-        elif payload == "link2":
-            mark_link_clicked(user_id, 2)
-            await message.answer(
-                "✅ Ссылка 2 успешно открыта!\n"
-                "Теперь нажми кнопку «Я перешёл по обеим ссылкам»."
-            )
-    else:
-        # Обычный /start без параметров
-        await cmd_start(message)
-
-# ============ ЗАПУСК БОТА ============
-async def main():
-    """Главная функция запуска бота"""
-    # Инициализация базы данных
-    init_db()
-    
-    # Подключаем роутер
-    dp.include_router(router)
-    
-    # Удаляем вебхук и запускаем поллинг
-    await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Бот запущен и готов к работе!")
-    
+# ============ НАСТРОЙКА WEBHOOK ============
+@app.on_event("startup")
+async def on_startup():
+    """Настройка при запуске"""
     try:
-        await dp.start_polling(bot)
-    except KeyboardInterrupt:
-        logger.info("Бот остановлен пользователем")
+        init_db()
+        logger.info("База данных инициализирована")
+        
+        # Устанавливаем webhook
+        webhook_url = os.getenv("RENDER_EXTERNAL_URL", "https://your-app.onrender.com")
+        webhook_path = f"/webhook/{BOT_TOKEN}"
+        webhook_url_full = f"{webhook_url}{webhook_path}"
+        
+        await bot.set_webhook(url=webhook_url_full, drop_pending_updates=True)
+        logger.info(f"Webhook установлен: {webhook_url_full}")
+        
+        # Подключаем роутер
+        dp.include_router(router)
+        
+        # Настраиваем обработку webhook
+        webhook_requests_handler = SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+        )
+        webhook_requests_handler.register(app, path=webhook_path)
+        setup_application(app, dp, bot=bot)
+        
     except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-    finally:
-        await bot.session.close()
-        logger.info("Сессия бота закрыта")
+        logger.error(f"Ошибка при старте: {e}")
 
+# ============ ЗАПУСК ============
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Бот остановлен.")
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
